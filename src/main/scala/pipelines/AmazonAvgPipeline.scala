@@ -60,7 +60,7 @@ class IncrementalPipeline(trainData: LabeledData[Int, String],
 object AmazonAvgPipeline extends Logging {
   val appName = "AmazonAvgPipeline"
 
-  def run(sc: SparkContext, conf: AmazonReviewsConfig): Pipeline[String, Double] = {
+  def run(sc: SparkContext, conf: AmazonReviewsConfig): Unit = {
     logInfo("Loading amazon reviews data.")
     val percentTrainData = 0.8
     val amazonData = AmazonReviewsDataLoader(sc, conf.dataLocation, conf.threshold).labeledData
@@ -85,12 +85,13 @@ object AmazonAvgPipeline extends Logging {
     // Pipeline parameters
     val numClasses = 2
     val stepSize = 1.0
-    val miniFrac = = 0.10
+    val miniFrac = 0.10
     val regParam = 1e-3
 
     // record train and test error as we train on more and more data
     var trainErr = new ListBuffer[Double]()
     var testErr = new ListBuffer[Double]()
+    var trainTimes = new ListBuffer[Double]()
 
     // I don't want to do this a lot
     var evaluationTestLabels = testData.labels.map(_ > 0)
@@ -101,6 +102,9 @@ object AmazonAvgPipeline extends Logging {
     val maxLen = batches.length
     for (batch <- batches) {
       logInfo("Training incremental batch: (" + j + " / " + maxLen + ")")
+      
+      val startTime = System.currentTimeMillis()
+
       // Train this pipeline
       val incPipeline = new IncrementalPipeline(
         batch,
@@ -114,6 +118,10 @@ object AmazonAvgPipeline extends Logging {
 
       // Test this iteration of the pipeline
       var trainPredictions = incPipeline.predictor(batch.data)
+
+      val endTime = System.currentTimeMillis()
+      trainTimes += (endTime - startTime)
+
       var testPredictions = incPipeline.predictor(testData.data)
 
       var trainEval = BinaryClassifierEvaluator(trainPredictions.get.map(_ > 0), batch.labels.map(_ > 0))
@@ -133,17 +141,21 @@ object AmazonAvgPipeline extends Logging {
 
     val incrementalTrainStr = trainErr.mkString(",")
     val incrementalTestStr = testErr.mkString(",")
+    val incrementalTimesStr = trainTimes.mkString(",")
 
     trainErr = new ListBuffer[Double]()
     testErr = new ListBuffer[Double]()
+    trainTimes = new ListBuffer[Double]()
 
     logInfo("Performing baseline test.")
     var unionedBatches = batches.head.labeledData
-    var j = 1
+    j = 1
     for (currentBatch <- batches) {
       logInfo("Training baseline batch: (" + j + " / " + maxLen + ")")
       unionedBatches = unionedBatches.union(currentBatch.labeledData)
       var labeledBatch = LabeledData(unionedBatches)
+
+      val startTime = System.currentTimeMillis()
 
       // Train this pipeline
       val incPipeline = new IncrementalPipeline(
@@ -158,6 +170,10 @@ object AmazonAvgPipeline extends Logging {
 
       // Test this iteration of the pipeline
       var trainPredictions = incPipeline.predictor(labeledBatch.data)
+      
+      val endTime = System.currentTimeMillis()
+      trainTimes += (endTime - startTime)
+
       var testPredictions = incPipeline.predictor(testData.data)
 
       var trainEval = BinaryClassifierEvaluator(trainPredictions.get.map(_ > 0), labeledBatch.labels.map(_ > 0))
@@ -166,6 +182,7 @@ object AmazonAvgPipeline extends Logging {
       // Record the error for later analysis
       trainErr += trainEval.error
       testErr += testEval.error
+      trainTimes += (endTime - startTime)
 
       logInfo("Test error: " + testEval.error)
 
@@ -177,14 +194,17 @@ object AmazonAvgPipeline extends Logging {
 
     val baselineTrainStr = trainErr.mkString(",")
     val baselineTestStr = testErr.mkString(",")
+    val baselineTimesStr = trainTimes.mkString(",")
 
     logInfo("Writing out train and test scores...")
 
     val trainStr = incrementalTrainStr + "\n" + baselineTrainStr
     val testStr = incrementalTestStr + "\n" + baselineTestStr
+    val timesStr = incrementalTimesStr + "\n" + baselineTimesStr
 
     new PrintWriter("trainErrors.csv") { write(trainStr); close }
     new PrintWriter("testErrors.csv") { write(testStr); close }
+    new PrintWriter("trainTimes.csv") { write(timesStr); close }
 
     logInfo("Finished.")
     logInfo("Final incremental test accuracy: " + finalIncrementalTest)

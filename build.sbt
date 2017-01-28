@@ -8,7 +8,7 @@ version := "0.2"
 
 organization := "edu.berkeley.cs.amplab"
 
-scalaVersion := "2.10.4"
+scalaVersion := "2.10.6"
 
 parallelExecution in Test := false
 
@@ -33,7 +33,8 @@ libraryDependencies ++= Seq(
 }
 
 {
-  val defaultHadoopVersion = "2.0.0-mr1-cdh4.2.0"
+  //val defaultHadoopVersion = "2.0.0-mr1-cdh4.2.0"
+  val defaultHadoopVersion = "2.6.0"
   val hadoopVersion =
     scala.util.Properties.envOrElse("SPARK_HADOOP_VERSION", defaultHadoopVersion)
   libraryDependencies += "org.apache.hadoop" % "hadoop-client" % hadoopVersion
