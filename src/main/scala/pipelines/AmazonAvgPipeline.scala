@@ -73,14 +73,14 @@ object AmazonAvgPipeline extends Logging {
     // incremental parameters:
     val numBatches = 100
     logInfo("Converting training data into " + numBatches.toString + " baches.")
-    val allBatches = trainDataRDD.zipWithIndex().groupBy(_._2 % numBatches)
-      .map(_._2).collect().map {
-      batch => sc.parallelize(batch.map(_._1).toSeq)
-    }.map(rdd => LabeledData(rdd))
+    val zippedBatches = trainDataRDD.zipWithIndex()
+    val allBatches = (0 until numBatches)
+      .map(i => zippedBatches.filter(_._2.toInt % numBatches == i).map(_._1))
+      .map(rdd => LabeledData(rdd))
     logInfo("Converted training data.")
 
     logInfo("Shuffling and setting up data batches.")
-    val batches = Random.shuffle(allBatches.toSeq)
+    val batches = Random.shuffle(allBatches)
 
     // Pipeline parameters
     val numClasses = 2
